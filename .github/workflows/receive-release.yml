@@ -31,4 +31,5 @@ jobs:
             --title "Release $VERSION" \
             --notes "$NOTES" \
             --latest \
+            --draft \
             || gh release edit "$VERSION" --notes "$NOTES"
