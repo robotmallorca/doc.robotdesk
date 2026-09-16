@@ -1,0 +1,65 @@
+# Publish the user-facing release notes of one version.
+#
+# Run it by hand from the Actions tab, giving the tag. It takes what was committed
+# under releases/<tag>/ and turns it into the published release:
+#
+#   1. uploads releases/<tag>/images/*.png as release assets, keeping their file name,
+#      which is what the <img> tags in notes.md point at;
+#   2. replaces the release body with notes.md;
+#   3. removes the draft flag.
+#
+# Step 3 is not optional: while a release is a draft its asset download URLs return 404
+# and every screenshot renders broken, both on GitHub and in the RobotDesk modal.
+#
+# Nothing here runs on push. Publishing is always a deliberate manual action.
+
+name: Publish Release Notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, e.g. v0.23.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          NOTES="releases/$TAG/notes.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error::$NOTES not found. Commit the notes before publishing $TAG."
+            exit 1
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Release $TAG" --notes-file "$NOTES" --draft
+          fi
+
+          # Assets first: the body already links to their download URLs.
+          if compgen -G "releases/$TAG/images/*" > /dev/null; then
+            gh release upload "$TAG" releases/"$TAG"/images/* --clobber
+          else
+            echo "::warning::No images under releases/$TAG/images/"
+          fi
+
+          gh release edit "$TAG" --notes-file "$NOTES" --draft=false
+
+          echo "Published $TAG"
+          gh release view "$TAG" --json url -q .url
